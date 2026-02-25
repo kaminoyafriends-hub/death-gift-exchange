@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>死のプレゼント交換（オンライン / playtest）</title>
+  <style>
+    body{font-family:system-ui, -apple-system, "Segoe UI", sans-serif; margin:16px; max-width:980px}
+    .row{display:flex; gap:12px; flex-wrap:wrap}
+    .card{border:1px solid #ccc; padding:12px; border-radius:10px; min-width:260px}
+    .muted{color:#666; font-size:12px}
+    input, select{padding:8px; border-radius:10px; border:1px solid #999}
+    button{padding:8px 10px; border-radius:10px; border:1px solid #888; background:#fff; cursor:pointer}
+    button.primary{background:#111; color:#fff; border-color:#111}
+    button.danger{background:#b00020; color:#fff; border-color:#b00020}
+    button:disabled{opacity:.5; cursor:not-allowed}
+    .pill{display:inline-block; padding:2px 8px; border-radius:999px; background:#eee; font-size:12px; margin-left:6px}
+    .log{white-space:pre-wrap; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; background:#0b0b0b; color:#eaeaea; padding:10px; border-radius:10px; max-height:260px; overflow:auto}
+    .board{display:flex; gap:8px; align-items:stretch; position:relative; height:96px}
+    .slot{ position: relative; flex:1; border:1px solid #999; border-radius:10px; padding:10px; text-align:center; background:#fafafa; overflow:hidden}
+    .zone{outline:3px solid #000}
+    .boxToken{
+      position:absolute;
+      height: 72px;
+      top: 12px;
+      left: 0;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      border:1px solid #111; border-radius:12px;
+      background:#fff;
+      transition: transform 280ms cubic-bezier(.2,.8,.2,1);
+      will-change: transform;
+      font-weight:800;
+      user-select:none;
+    }
+    .boxToken.moving{ z-index: 5; box-shadow: 0 8px 18px rgba(0,0,0,.18); }
+    .tokenSub{font-weight:600; font-size:11px; color:#444; margin-top:2px}
+    .hidden{display:none !important}
+    table{border-collapse:collapse; width:100%}
+    td,th{border:1px solid #ddd; padding:8px; font-size:14px}
+    th{background:#f7f7f7; text-align:left}
+    .kpi{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+    .kpi label{font-size:12px; color:#555}
+  </style>
+</head>
+<body>
+  <h1>死のプレゼント交換（オンライン / playtest）</h1>
+
+  <div id="viewHome" class="card">
+    <h3 style="margin:0 0 6px">HOME</h3>
+    <div class="muted">部屋作成 or 参加。参加時に「参加（候補）」か「観戦」かを選びます。</div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="btnCreate">部屋を作成（ホスト）</button>
+    </div>
+    <hr/>
+    <div class="row" style="align-items:flex-end">
+      <div>
+        <div class="muted">部屋コード</div>
+        <input id="joinCode" placeholder="例：A1B2C3" />
+      </div>
+      <div>
+        <div class="muted">入室タイプ</div>
+        <select id="joinAs">
+          <option value="PARTICIPANT">参加（プレイヤー候補）</option>
+          <option value="SPECTATOR">観戦</option>
+        </select>
+      </div>
+      <button class="primary" id="btnJoin">部屋に参加</button>
+    </div>
+    <div class="muted" style="margin-top:10px">復帰：同じ端末で同じ部屋コードに入ると復帰します（部屋削除後は不可）。</div>
+  </div>
+
+  <div id="viewRoom" class="hidden">
+    <div class="row">
+      <div class="card" style="flex:2">
+        <div>
+          <b>部屋：</b><span id="roomCode"></span>
+          <span class="pill">役割：<span id="myRole"></span></span>
+          <span class="pill">Phase：<span id="phase"></span></span>
+          <span class="pill">T=<span id="timer"></span></span>
+          <span class="pill">R=<span id="round"></span></span>
+          <span class="pill">先手：<span id="firstPlayer"></span></span>
+          <span class="pill">N=<span id="N"></span></span>
+          <span class="pill">Z=<span id="Z"></span></span>
+          <span class="pill">H=<span id="H"></span></span>
+        </div>
+
+        <h3 style="margin:10px 0 6px">盤面</h3>
+        <div class="board" id="board"></div>
+
+        <div class="muted" style="margin-top:6px">
+          被弾ゾーン：P1=[1..Z] / P2=[N..N-Z+1]（T=0で爆発）
+        </div>
+
+        <h3 style="margin:12px 0 6px">ログ</h3>
+        <div class="log" id="log"></div>
+
+        <div style="margin-top:10px" class="row">
+          <button id="btnLeave">退出（復帰不可）</button>
+          <button id="btnDestroyRoom" class="danger">ゲーム終了（部屋削除）</button>
+        </div>
+        <div class="muted" id="destroyHint" style="margin-top:6px"></div>
+      </div>
+
+      <div class="card" style="flex:1">
+        <!-- SETTINGS -->
+        <div id="panelSettings" class="hidden">
+          <h3 style="margin:0 0 6px">設定（ホストのみ）</h3>
+          <div class="muted">開始前のみ変更可。seedを入れるとデッキ順や割当が再現されます。</div>
+
+          <div class="kpi" style="margin-top:10px">
+            <div>
+              <label>盤面 N（5〜12）</label><br/>
+              <input id="setN" type="number" min="5" max="12"/>
+            </div>
+            <div>
+              <label>被弾 Z（1〜5 / Nで自動制限）</label><br/>
+              <input id="setZ" type="number" min="1" max="5"/>
+            </div>
+            <div>
+              <label>手札 H（1〜5）</label><br/>
+              <input id="setH" type="number" min="1" max="5"/>
+            </div>
+            <div>
+              <label>T0（初期）</label><br/>
+              <input id="setT0" type="number" min="1" max="50"/>
+            </div>
+            <div>
+              <label>Tmax（上限）</label><br/>
+              <input id="setTmax" type="number" min="1" max="99"/>
+            </div>
+            <div>
+              <label>seed（文字列OK、空ならランダム）</label><br/>
+              <input id="setSeed" placeholder="例：test-001"/>
+            </div>
+          </div>
+
+          <hr/>
+          <div class="muted">デッキ枚数（合計は可変） 合計：<span id="deckTotal"></span>枚</div>
+          <div style="margin-top:10px">
+            <table id="deckTable"></table>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button id="btnApplySettings">設定を適用</button>
+            <button id="btnResetDefault">デフォルトに戻す</button>
+            <button class="primary" id="btnConfirmSettings">設定を確定（ロビーへ）</button>
+          </div>
+        </div>
+
+        <!-- LOBBY -->
+        <div id="panelLobby" class="hidden">
+          <h3 style="margin:0 0 6px">ロビー</h3>
+          <div class="muted">参加者2名以上で開始。開始時にP1/P2はランダム割当。</div>
+          <div style="margin-top:10px">
+            <div><b>参加者：</b><span id="participants"></span></div>
+            <div><b>観戦者：</b><span id="spectators"></span></div>
+          </div>
+          <div style="margin-top:10px">
+            <button id="btnSwitchJoinAs">参加/観戦を切替</button>
+          </div>
+          <div style="margin-top:10px">
+            <button class="primary" id="btnStartGame">ゲーム開始（ホスト）</button>
+          </div>
+        </div>
+
+        <!-- BOMB -->
+        <div id="panelBomb" class="hidden">
+          <h3 style="margin:0 0 6px">爆弾セット（P1/P2のみ）</h3>
+          <div class="muted">相手に贈る爆弾を「位置」で選ぶ（その位置の箱へ投入）。</div>
+          <div style="margin-top:10px">
+            <select id="bombPos"></select>
+            <button class="primary" id="btnSetBomb">爆弾をセット</button>
+          </div>
+        </div>
+
+        <!-- PLAYING -->
+        <div id="panelPlay" class="hidden">
+          <h3 style="margin:0 0 6px">手札（P1/P2のみ）</h3>
+          <div class="muted" id="playHint">H枚から1枚を選んで確定。両者確定で自動解決。</div>
+          <div id="hand"></div>
+          <div id="adjWrap" class="hidden" style="margin-top:10px">
+            <div class="muted">隣接指定</div>
+            <select id="adjSel"></select>
+          </div>
+          <div style="margin-top:10px">
+            <button class="primary" id="btnPick" disabled>このカードで確定</button>
+          </div>
+          <hr/>
+          <div class="muted">公開（今ラウンド）：</div>
+          <div><b>P1：</b><span id="revealP1">—</span></div>
+          <div><b>P2：</b><span id="revealP2">—</span></div>
+        </div>
+
+        <!-- SPECTATOR -->
+        <div id="panelSpectator" class="hidden">
+          <h3 style="margin:0 0 6px">観戦</h3>
+          <div class="muted">盤面・ログ・公開カードのみ表示。</div>
+          <div style="margin-top:10px">
+            <div class="muted">公開（今ラウンド）：</div>
+            <div><b>P1：</b><span id="revealP1s">—</span></div>
+            <div><b>P2：</b><span id="revealP2s">—</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/client.js"></script>
+</body>
+</html>
