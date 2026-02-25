@@ -1,0 +1,351 @@
+{\rtf1\ansi\ansicpg932\cocoartf2761
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 (() => \{\
+  const socket = io();\
+\
+  // ===== clientId (\uc0\u24489 \u24112 \u29992 ) =====\
+  const LS_KEY = "dpg_clientId";\
+  let clientId = localStorage.getItem(LS_KEY);\
+  if(!clientId)\{\
+    clientId = crypto.randomUUID();\
+    localStorage.setItem(LS_KEY, clientId);\
+  \}\
+\
+  let roomCode = null;\
+  let room = null;\
+  let me = null;\
+  let selectedCardId = null;\
+\
+  // \uc0\u26085 \u26412 \u35486 \u21517 \u65288 \u20844 \u38283 \u34920 \u31034 \u29992 \u65289 \
+  const CARD_NAME = \{\
+    SHIFT_P1: "\uc0\u12471 \u12501 \u12488 +1\u65288 \u12497 \u12524 \u12540 \u12489 \u65281 \u65289 ",\
+    SHIFT_M1: "\uc0\u12471 \u12501 \u12488 -1\u65288 \u36870 \u12497 \u12524 \u12540 \u12489 \u65281 \u65289 ",\
+    SWAP_17:  "\uc0\u20837 \u12428 \u26367 \u12360  1\u8596 N\u65288 \u31471 \u12363 \u12425 \u31471 \u12414 \u12391 \u65289 ",\
+    SWAP_26:  "\uc0\u20837 \u12428 \u26367 \u12360  2\u8596 (N-1)\u65288 \u20108 \u21015 \u30446 \u12481 \u12455 \u12531 \u12472 \u65289 ",\
+    SWAP_35:  "\uc0\u20837 \u12428 \u26367 \u12360  3\u8596 (N-2)\u65288 \u12475 \u12531 \u12479 \u12540 \u23849 \u12375 \u65289 ",\
+    SWAP_ADJ: "\uc0\u38563 \u25509 \u20837 \u12428 \u26367 \u12360 \u65288 \u24109 \u26367 \u12360 \u65289 ",\
+    T_ACCEL:  "\uc0\u21152 \u36895 \u65288 \u29053 \u12428 \u65289 ",\
+    T_DECEL:  "\uc0\u28187 \u36895 \u65288 \u24341 \u12365 \u24310 \u12400 \u12379 \u65289 ",\
+    T_STOP:   "\uc0\u20572 \u27490 \u65288 \u38291 \u65289 "\
+  \};\
+  function cardLabel(cardId)\{ return cardId ? (CARD_NAME[cardId] || cardId) : "\'97"; \}\
+\
+  // ===== DOM =====\
+  const $ = (id) => document.getElementById(id);\
+\
+  const viewHome = $("viewHome");\
+  const btnCreate = $("btnCreate");\
+  const joinCode = $("joinCode");\
+  const joinAs = $("joinAs");\
+  const btnJoin = $("btnJoin");\
+\
+  const viewRoom = $("viewRoom");\
+  const roomCodeEl = $("roomCode");\
+  const myRoleEl = $("myRole");\
+  const phaseEl = $("phase");\
+  const timerEl = $("timer");\
+  const roundEl = $("round");\
+  const firstPlayerEl = $("firstPlayer");\
+  const NEl = $("N");\
+  const ZEl = $("Z");\
+  const HEl = $("H");\
+  const logEl = $("log");\
+  const boardEl = $("board");\
+  const btnLeave = $("btnLeave");\
+  const btnDestroyRoom = $("btnDestroyRoom");\
+  const destroyHint = $("destroyHint");\
+\
+  const panelSettings = $("panelSettings");\
+  const setN = $("setN");\
+  const setZ = $("setZ");\
+  const setH = $("setH");\
+  const setT0 = $("setT0");\
+  const setTmax = $("setTmax");\
+  const setSeed = $("setSeed");\
+  const btnApplySettings = $("btnApplySettings");\
+\
+  const deckTotalEl = $("deckTotal");\
+  const deckTable = $("deckTable");\
+  const btnResetDefault = $("btnResetDefault");\
+  const btnConfirmSettings = $("btnConfirmSettings");\
+\
+  const panelLobby = $("panelLobby");\
+  const participantsEl = $("participants");\
+  const spectatorsEl = $("spectators");\
+  const btnSwitchJoinAs = $("btnSwitchJoinAs");\
+  const btnStartGame = $("btnStartGame");\
+\
+  const panelBomb = $("panelBomb");\
+  const bombPos = $("bombPos");\
+  const btnSetBomb = $("btnSetBomb");\
+\
+  const panelPlay = $("panelPlay");\
+  const playHint = $("playHint");\
+  const handEl = $("hand");\
+  const adjWrap = $("adjWrap");\
+  const adjSel = $("adjSel");\
+  const btnPick = $("btnPick");\
+  const revealP1 = $("revealP1");\
+  const revealP2 = $("revealP2");\
+\
+  const panelSpectator = $("panelSpectator");\
+  const revealP1s = $("revealP1s");\
+  const revealP2s = $("revealP2s");\
+\
+  // ===== board render (N variable) =====\
+  let boardReadyN = null;\
+\
+  function buildBoxIds(N)\{\
+    const ids = [];\
+    for(let i=0;i<N;i++) ids.push(String.fromCharCode("A".charCodeAt(0) + i));\
+    return ids;\
+  \}\
+\
+  function renderBoardForN(N, Z)\{\
+    if(boardReadyN === N) return;\
+    boardReadyN = N;\
+\
+    boardEl.innerHTML = "";\
+    // slots\
+    for(let pos=1; pos<=N; pos++)\{\
+      const d = document.createElement("div");\
+      d.className = "slot";\
+      // zone outline based on Z (but outline is purely visual; update each render below too)\
+      d.dataset.pos = String(pos);\
+      d.innerHTML = `\
+        <div style="font-weight:700">\uc0\u20301 \u32622 $\{pos\}</div>\
+        <div class="muted"></div>\
+      `;\
+      boardEl.appendChild(d);\
+    \}\
+    // tokens\
+    for(const boxId of buildBoxIds(N))\{\
+      const token = document.createElement("div");\
+      token.className = "boxToken";\
+      token.dataset.box = boxId;\
+      token.innerHTML = `<div>$\{boxId\}</div><div class="tokenSub">\uc0\u31665 </div>`;\
+      boardEl.appendChild(token);\
+    \}\
+  \}\
+\
+  function updateZoneStyles(N, Z)\{\
+    // Z is clipped server-side; just in case\
+    const z = Math.max(1, Math.min(Z, Math.floor(N/2)));\
+    for(let pos=1; pos<=N; pos++)\{\
+      const slot = boardEl.querySelector(`[data-pos="$\{pos\}"]`);\
+      if(!slot) continue;\
+      slot.classList.remove("zone");\
+      const inP1 = pos <= z;\
+      const inP2 = pos > N - z;\
+      if(inP1 || inP2) slot.classList.add("zone");\
+      const m = slot.querySelector(".muted");\
+      if(m) m.textContent = inP1 ? "P1\uc0\u34987 \u24382 " : (inP2 ? "P2\u34987 \u24382 " : "");\
+    \}\
+  \}\
+\
+  function layoutTokens(slotToBox, N, animate)\{\
+    if(!slotToBox) return;\
+    renderBoardForN(N, room?.settings?.Z || 2);\
+    updateZoneStyles(N, room?.settings?.Z || 2);\
+\
+    // token width: (boardWidth - gaps*(N-1)) / N\
+    const gap = 8;\
+    const boardRect = boardEl.getBoundingClientRect();\
+    const tokenW = (boardRect.width - gap*(N-1)) / N;\
+    const tokens = boardEl.querySelectorAll(".boxToken");\
+    tokens.forEach(t => \{ t.style.width = `$\{tokenW\}px`; \});\
+\
+    if(animate) tokens.forEach(t => t.classList.add("moving"));\
+\
+    for(let pos=1; pos<=N; pos++)\{\
+      const boxId = slotToBox[pos];\
+      const token = boardEl.querySelector(`.boxToken[data-box="$\{boxId\}"]`);\
+      if(!token) continue;\
+      const x = (pos-1)*(tokenW+gap);\
+      token.style.transform = `translate($\{x\}px, 0px)`;\
+    \}\
+\
+    if(animate)\{\
+      setTimeout(() => tokens.forEach(t => t.classList.remove("moving")), 320);\
+    \}\
+  \}\
+\
+  // ===== deck UI =====\
+  const DECK_KEYS = [\
+    ["SHIFT_P1","\uc0\u12471 \u12501 \u12488 +1"],\
+    ["SHIFT_M1","\uc0\u12471 \u12501 \u12488 -1"],\
+    ["SWAP_17","\uc0\u20837 \u26367  1\u8596 N"],\
+    ["SWAP_26","\uc0\u20837 \u26367  2\u8596 (N-1)"],\
+    ["SWAP_35","\uc0\u20837 \u26367  3\u8596 (N-2)"],\
+    ["SWAP_ADJ","\uc0\u38563 \u25509 \u20837 \u26367 "],\
+    ["T_ACCEL","\uc0\u21152 \u36895 "],\
+    ["T_DECEL","\uc0\u28187 \u36895 "],\
+    ["T_STOP","\uc0\u20572 \u27490 "]\
+  ];\
+\
+  function renderDeckSettings()\{\
+    const cfg = room.deckConfig || \{\};\
+    const total = Object.values(cfg).reduce((a,b)=>a+(Number(b)||0),0);\
+    deckTotalEl.textContent = String(total);\
+\
+    deckTable.innerHTML = `\
+      <tr><th>\uc0\u12459 \u12540 \u12489 </th><th>\u26522 \u25968 </th><th>\u25805 \u20316 </th></tr>\
+      $\{DECK_KEYS.map(([id,label]) => `\
+        <tr>\
+          <td>$\{label\}</td>\
+          <td style="width:70px; text-align:right"><b>$\{cfg[id] ?? 0\}</b></td>\
+          <td style="width:160px">\
+            <button data-dec="$\{id\}">-</button>\
+            <button data-inc="$\{id\}">+</button>\
+          </td>\
+        </tr>\
+      `).join("")\}\
+    `;\
+    deckTable.querySelectorAll("button[data-inc]").forEach(btn => btn.onclick = () => adjustDeck(btn.dataset.inc, +1));\
+    deckTable.querySelectorAll("button[data-dec]").forEach(btn => btn.onclick = () => adjustDeck(btn.dataset.dec, -1));\
+  \}\
+\
+  function adjustDeck(cardId, delta)\{\
+    const next = \{ ...room.deckConfig \};\
+    next[cardId] = Math.max(0, (next[cardId] ?? 0) + delta);\
+    applyAllSettings(\{ deckConfig: next \});\
+  \}\
+\
+  // ===== settings apply =====\
+  function fillSettingsInputs()\{\
+    const s = room.settings || \{\};\
+    setN.value = s.N;\
+    setZ.value = s.Z;\
+    setH.value = s.H;\
+    setT0.value = s.T0;\
+    setTmax.value = s.Tmax;\
+    setSeed.value = s.seed || "";\
+  \}\
+\
+  function readSettingsInputs()\{\
+    return \{\
+      N: Number(setN.value),\
+      Z: Number(setZ.value),\
+      H: Number(setH.value),\
+      T0: Number(setT0.value),\
+      Tmax: Number(setTmax.value),\
+      seed: (setSeed.value || "").trim()\
+    \};\
+  \}\
+\
+  function applyAllSettings(\{ settings, deckConfig \})\{\
+    socket.emit("settings:updateAll", \{\
+      roomCode,\
+      clientId,\
+      settings: settings || (room ? room.settings : \{\}),\
+      deckConfig: deckConfig || (room ? room.deckConfig : \{\})\
+    \}, (res) => \{\
+      if(!res?.ok) alert("\uc0\u26356 \u26032 \u12391 \u12365 \u12414 \u12379 \u12435 \u65306 " + res?.error);\
+    \});\
+  \}\
+\
+  // ===== views =====\
+  function show(el)\{ el.classList.remove("hidden"); \}\
+  function hide(el)\{ el.classList.add("hidden"); \}\
+\
+  function render()\{\
+    if(!room)\{\
+      show(viewHome); hide(viewRoom);\
+      return;\
+    \}\
+    hide(viewHome); show(viewRoom);\
+\
+    roomCodeEl.textContent = room.code;\
+    myRoleEl.textContent = me?.role ?? "\'97";\
+    phaseEl.textContent = room.phase;\
+    timerEl.textContent = room.timerT;\
+    roundEl.textContent = room.round;\
+    firstPlayerEl.textContent = room.firstPlayer;\
+\
+    const s = room.settings || \{N:7,Z:2,H:3\};\
+    NEl.textContent = s.N;\
+    ZEl.textContent = s.Z;\
+    HEl.textContent = s.H;\
+\
+    logEl.textContent = (room.log || []).join("\\n");\
+\
+    layoutTokens(room.slotToBox, s.N, true);\
+\
+    destroyHint.textContent = (me?.role === "HOST") ? "\uc0\u12507 \u12473 \u12488 \u12398 \u12415 \u37096 \u23627 \u21066 \u38500 \u12391 \u12365 \u12414 \u12377 \u65288 \u20840 \u21729 \u24375 \u21046 \u36864 \u20986 \u65289 \u12290 " : "\u37096 \u23627 \u21066 \u38500 \u12399 \u12507 \u12473 \u12488 \u12398 \u12415 \u12290 ";\
+\
+    // panels\
+    hide(panelSettings);\
+    hide(panelLobby);\
+    hide(panelBomb);\
+    hide(panelPlay);\
+    hide(panelSpectator);\
+\
+    // \uc0\u44277 \u44060  \u52852 \u46300  \u54364 \u49884 \
+    const r1 = room.revealed?.P1?.cardId || null;\
+    const r2 = room.revealed?.P2?.cardId || null;\
+    revealP1.textContent = cardLabel(r1);\
+    revealP2.textContent = cardLabel(r2);\
+    revealP1s.textContent = cardLabel(r1);\
+    revealP2s.textContent = cardLabel(r2);\
+\
+    const role = me?.role;\
+\
+    if(room.phase === "SETTINGS")\{\
+      if(role === "HOST")\{\
+        show(panelSettings);\
+        fillSettingsInputs();\
+        renderDeckSettings();\
+      \} else \{\
+        show(panelLobby);\
+      \}\
+    \}\
+\
+    if(room.phase === "LOBBY")\{\
+      show(panelLobby);\
+      participantsEl.textContent = room.participants.length ? room.participants.length + "\uc0\u20154 " : "0\u20154 ";\
+      spectatorsEl.textContent = room.spectators.length ? room.spectators.length + "\uc0\u20154 " : "0\u20154 ";\
+      btnStartGame.disabled = (role !== "HOST");\
+    \}\
+\
+    if(room.phase === "BOMB")\{\
+      if(role === "P1" || role === "P2")\{\
+        show(panelBomb);\
+        renderBombSelect();\
+      \} else \{\
+        show(panelSpectator);\
+      \}\
+    \}\
+\
+    if(room.phase === "PLAYING")\{\
+      if(role === "P1" || role === "P2")\{\
+        show(panelPlay);\
+        // guard: bombSet must be true for both\
+        const ready = room.bombSet?.P1 && room.bombSet?.P2;\
+        if(!ready)\{\
+          playHint.textContent = "\uc0\u29190 \u24382 \u12475 \u12483 \u12488 \u23436 \u20102 \u24453 \u12385 \'85";\
+          handEl.innerHTML = `<div class="muted">\uc0\u29190 \u24382 \u12475 \u12483 \u12488 \u23436 \u20102 \u24453 \u12385 \'85</div>`;\
+          btnPick.disabled = true;\
+          adjWrap.classList.add("hidden");\
+        \} else \{\
+          playHint.textContent = `$\{s.H\}\uc0\u26522 \u12363 \u12425 1\u26522 \u12434 \u36984 \u12435 \u12391 \u30906 \u23450 \u12290 \u20001 \u32773 \u30906 \u23450 \u12391 \u33258 \u21205 \u35299 \u27770 \u12290 `;\
+          renderHand();\
+        \}\
+      \} else \{\
+        show(panelSpectator);\
+      \}\
+    \}\
+\
+    if(room.phase === "ENDED")\{\
+      show(panelSpectator);\
+    \}\
+  \}\
+\
+  function renderBombSelect()\{\
+    const N = room.settings.N;\
+    bombPos.innerHTML = "";\
+    fo}
