@@ -575,7 +575,7 @@ io.on("connection", (socket) => {
       const r = room.rolesByClientId.get(cid);
       return r === "PARTICIPANT" || r === "HOST";
     });
-    if(candidates.length < 2) return cb && cb({ ok:false, error:"NEED_2_PARTICIPANTS" });
+    if(candidates.length < 1) return cb && cb({ ok:false, error:"NEED_2_PARTICIPANTS" });
 
     shuffle(candidates, rng);
     const p1cid = candidates[0];
